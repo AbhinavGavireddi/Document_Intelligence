@@ -8,7 +8,7 @@ This module handles:
  4. Parsing markdown tables into JSON 2D structures for dense tables
  5. Narration of tables/images via LLM
  6. Semantic enhancements (deduplication, coreference, metadata summarization)
- 7. Embedding computation and storage in Redis & BM25
+ 7. Embedding computation for in-memory use
 
 Each step is modular to support swapping components (e.g. different parsers or stores).
 """
@@ -27,7 +27,6 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
 from rank_bm25 import BM25Okapi
 import numpy as np
-import redis
 
 # LLM client abstraction
 from src.utils import LLMClient
@@ -71,22 +70,12 @@ class GPPConfig:
     TEXT_EMBED_MODEL = 'sentence-transformers/all-MiniLM-L6-v2'
     META_EMBED_MODEL = 'sentence-transformers/all-MiniLM-L6-v2'
 
-    # Redis settings
-    REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
-    REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
-    REDIS_DB = int(os.getenv('REDIS_DB', 0))
-    REDIS_VECTOR_INDEX = 'gpp_vectors'
-
 class GPP:
     def __init__(self, config: GPPConfig):
         self.config = config
         # Embedding models
         self.text_embedder = SentenceTransformer(config.TEXT_EMBED_MODEL)
         self.meta_embedder = SentenceTransformer(config.META_EMBED_MODEL)
-        # Redis for vectors + metadata
-        self.redis = redis.Redis(host=config.REDIS_HOST,
-                                 port=config.REDIS_PORT,
-                                 db=config.REDIS_DB)
         self.bm25 = None
 
     def parse_pdf(self, pdf_path: str, output_dir: str) -> Dict[str, Any]:
@@ -179,42 +168,43 @@ class GPP:
                 c['narration'] = c['text']
 
     def deduplicate(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """
-        Drops near-duplicate narrations via cosine sim > threshold.
-        """
-        embs = self.text_embedder.encode([c['narration'] for c in chunks], convert_to_tensor=True)
-        keep = []
-        for i, emb in enumerate(embs):
-            if not any((emb @ embs[j]).item() / (np.linalg.norm(emb) * np.linalg.norm(embs[j]))
-                       > self.config.DEDUP_SIM_THRESHOLD for j in keep):
-                keep.append(i)
-        deduped = [chunks[i] for i in keep]
-        logger.info(f"Deduplicated: {len(chunks)}→{len(deduped)}")
-        return deduped
+        try:
+            embs = self.text_embedder.encode([c.get('narration', '') for c in chunks], convert_to_tensor=True)
+            keep = []
+            for i, emb in enumerate(embs):
+                if not any((emb @ embs[j]).item() / (np.linalg.norm(emb) * np.linalg.norm(embs[j]) + 1e-8)
+                           > self.config.DEDUP_SIM_THRESHOLD for j in keep):
+                    keep.append(i)
+            deduped = [chunks[i] for i in keep]
+            logger.info(f"Deduplicated: {len(chunks)}→{len(deduped)}")
+            return deduped
+        except Exception as e:
+            logger.error(f"Deduplication failed: {e}")
+            return chunks
 
     def coref_resolution(self, chunks: List[Dict[str, Any]]) -> None:
-        """
-        Resolve pronouns using preceding context via LLM.
-        """
         for idx, c in enumerate(chunks):
             start = max(0, idx-self.config.COREF_CONTEXT_SIZE)
-            ctx = "\n".join(chunks[i]['narration'] for i in range(start, idx))
-            prompt = f"Context:\n{ctx}\nRewrite pronouns in:\n{c['narration']}"
-            c['narration'] = LLMClient.generate(prompt)
+            ctx = "\n".join(chunks[i].get('narration', '') for i in range(start, idx))
+            prompt = f"Context:\n{ctx}\nRewrite pronouns in:\n{c.get('narration', '')}"
+            try:
+                c['narration'] = LLMClient.generate(prompt)
+            except Exception as e:
+                logger.error(f"Coref resolution failed for chunk {idx}: {e}")
 
     def metadata_summarization(self, chunks: List[Dict[str, Any]]) -> None:
-        """
-        Summarize sections and attach to metadata for self-contained context.
-        """
         sections: Dict[str, List[Dict[str, Any]]] = {}
         for c in chunks:
             sec = c.get('section', 'default')
             sections.setdefault(sec, []).append(c)
         for sec, items in sections.items():
-            blob = "\n".join(i['narration'] for i in items)
-            summ = LLMClient.generate(f"Summarize this section:\n{blob}")
-            for i in items:
-                i.setdefault('metadata', {})['section_summary'] = summ
+            blob = "\n".join(i.get('narration', '') for i in items)
+            try:
+                summ = LLMClient.generate(f"Summarize this section:\n{blob}")
+                for i in items:
+                    i.setdefault('metadata', {})['section_summary'] = summ
+            except Exception as e:
+                logger.error(f"Metadata summarization failed for section {sec}: {e}")
 
     def build_bm25(self, chunks: List[Dict[str, Any]]) -> None:
         """
@@ -223,31 +213,20 @@ class GPP:
         tokenized = [c['narration'].split() for c in chunks]
         self.bm25 = BM25Okapi(tokenized)
 
-    def compute_and_store(self, chunks: List[Dict[str, Any]]) -> None:
-        """
-        Encode narrations & metadata, store vectors and chunk metadata in Redis.
-        """
-        txts = [c['narration'] for c in chunks]
-        metas = [c.get('metadata', {}).get('section_summary', '') for c in chunks]
-        txt_embs = self.text_embedder.encode(txts)
-        meta_embs = self.meta_embedder.encode(metas)
-
-        pipe = self.redis.pipeline()
-        for i, (c, te) in enumerate(zip(chunks, txt_embs)):
-            key = f"chunk:{i}"
-            # store metadata
-            store = {'narration': c['narration'], 'type': c['type']}
-            if 'table_structure' in c:
-                store['table_structure'] = json.dumps(c['table_structure'])
-            pipe.hset(key, mapping=store)
-            # store dense vector
-            pipe.hset(self.config.REDIS_VECTOR_INDEX, key, te.tobytes())
-        pipe.execute()
-        logger.info("Stored embeddings and metadata in Redis.")
+    # def compute_and_store(self, chunks: List[Dict[str, Any]]) -> None:
+    #     try:
+    #         txts = [c.get('narration', '') for c in chunks]
+    #         metas = [c.get('metadata', {}).get('section_summary', '') for c in chunks]
+    #         txt_embs = self.text_embedder.encode(txts)
+    #         meta_embs = self.meta_embedder.encode(metas)
+    #         # No Redis storage, just keep for in-memory use or return as needed
+    #         logger.info("Computed embeddings for chunks.")
+    #     except Exception as e:
+    #         logger.error(f"Failed to compute embeddings: {e}")
 
     def run(self, pdf_path: str, output_dir: str) -> Dict[str, Any]:
         """
-        Executes full GPP: parse → chunk → narrate → enhance → index.
+        Executes full GPP: parse -> chunk -> narrate -> enhance -> index.
         Returns parse output dict augmented with `chunks` for downstream processes.
         """
         parsed = self.parse_pdf(pdf_path, output_dir)
@@ -258,16 +237,7 @@ class GPP:
         self.coref_resolution(chunks)
         self.metadata_summarization(chunks)
         self.build_bm25(chunks)
-        self.compute_and_store(chunks)
+        # self.compute_and_store(chunks)
         parsed['chunks'] = chunks
         logger.info("GPP pipeline complete.")
         return parsed
-
-if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('pdf')
-    parser.add_argument('outdir')
-    args = parser.parse_args()
-    gpp = GPP(GPPConfig())
-    gpp.run(args.pdf, args.outdir)

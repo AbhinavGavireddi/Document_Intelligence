@@ -1,6 +1,9 @@
 # Base image
 FROM python:3.10-slim
 
+RUN useradd -m -u 1000 user
+USER user
+
 # Set working directory
 WORKDIR /app
 
@@ -9,7 +12,9 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
     ffmpeg \
-    libgomp1 \         # for hnswlib (needed for OpenMP)
+    
+    # for hnswlib (needed for OpenMP)
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy and install Python dependencies
@@ -21,15 +26,12 @@ COPY src/ ./src/
 COPY tests/ ./tests/
 COPY app.py .
 
-# Copy env file if you want local dev (optional)
-# COPY .env .env
-
 # Expose Streamlit port
-EXPOSE 8501
+EXPOSE 7860
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV TOKENIZERS_PARALLELISM=false
 
 # Start Streamlit
-ENTRYPOINT ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+ENTRYPOINT ["streamlit", "run", "app.py", "--server.port=7860", "--server.address=0.0.0.0"]

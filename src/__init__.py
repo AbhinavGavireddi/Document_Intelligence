@@ -19,7 +19,8 @@ def configure_logging():
         wrapper_class=structlog.stdlib.BoundLogger,
         cache_logger_on_first_use=True,
     )
-    logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+    if not logging.getLogger().handlers:
+        logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
 def get_env(name):
     val = os.getenv(name)

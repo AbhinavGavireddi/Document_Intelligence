@@ -8,29 +8,46 @@ on:
 
 jobs:
   build-and-test:
-    # … your existing test setup …
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run tests
+        run: |
+          if [ -f tests/test.py ]; then python -m unittest discover -s tests; fi
 
   deploy-to-hf:
     needs: build-and-test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'  # only on main branch
+    if: github.ref == 'refs/heads/main'
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0            # needed to push full history
+          fetch-depth: 0
 
-      - name: Set up Docker credentials
-        run: echo "${{ secrets.HF_TOKEN }}" | docker login --username ${{ secrets.HF_USERNAME }} --password-stdin docker.pkg.github.com
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Install Hugging Face CLI
-        run: pip install huggingface_hub
+      - name: Log in to Hugging Face Docker
+        run: echo "${{ secrets.HF_TOKEN }}" | docker login --username ${{ secrets.HF_USERNAME }} --password-stdin docker.io
 
-      - name: Log in to Hugging Face
+      - name: Build Docker image
+        run: docker build -t docker.io/${{ secrets.HF_USERNAME }}/${{ secrets.HF_SPACE_NAME }}:latest .
+
+      - name: Push Docker image to Hugging Face
+        run: docker push docker.io/${{ secrets.HF_USERNAME }}/${{ secrets.HF_SPACE_NAME }}:latest
+
+      # Optionally, trigger a Space restart via the API (not strictly required)
+      - name: Restart Hugging Face Space
         run: |
-          huggingface-cli login --token ${{ secrets.HF_TOKEN }}
-
-      - name: Push to Hugging Face Space
-        run: |
-          git remote add hf https://huggingface.co/spaces/${{ secrets.HF_USERNAME }}/${{ secrets.HF_SPACE_NAME }}.git
-          git push hf main --force
+          pip install huggingface_hub
+          python -c "from huggingface_hub import HfApi; HfApi(token='${{ secrets.HF_TOKEN }}').restart_space('${{ secrets.HF_USERNAME }}', '${{ secrets.HF_SPACE_NAME }}')"

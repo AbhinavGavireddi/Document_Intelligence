@@ -15,7 +15,9 @@ class EmbeddingConfig:
     META_MODEL = os.getenv('META_EMBED_MODEL', 'sentence-transformers/all-MiniLM-L6-v2')
 
 class RetrieverConfig:
-    TOP_K = int(os.getenv('RETRIEVER_TOP_K', 10))
+    TOP_K = int(os.getenv('RETRIEVER_TOP_K', 10))  # number of candidates per retrieval path
+    DENSE_MODEL = 'sentence-transformers/all-MiniLM-L6-v2'
+    ANN_TOP = int(os.getenv('ANN_TOP', 50))
 
 class RerankerConfig:
     MODEL_NAME = os.getenv('RERANKER_MODEL', 'BAAI/bge-reranker-v2-Gemma')
