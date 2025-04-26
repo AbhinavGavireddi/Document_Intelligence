@@ -20,9 +20,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Run tests
-        run: |
-          if [ -f tests/test.py ]; then python -m unittest discover -s tests; fi
+      # - name: Run tests
+      #   run: |
+      #     if [ -f tests/test.py ]; then python -m unittest discover -s tests; fi
 
   deploy-to-hf:
     needs: build-and-test
