@@ -42,10 +42,10 @@ jobs:
         run: echo "${{ secrets.HF_TOKEN }}" | docker login --username ${{ secrets.HF_USERNAME }} --password-stdin registry.huggingface.co
 
       - name: Build Docker image
-        run: docker build -t docker.io/${{ secrets.HF_USERNAME }}/${{ secrets.HF_SPACE_NAME }}:latest .
+        run: docker build -t registry.huggingface.co/${{ secrets.HF_USERNAME }}/${{ secrets.HF_SPACE_NAME }}:latest .
 
       - name: Push Docker image to Hugging Face
-        run: docker push docker.io/${{ secrets.HF_USERNAME }}/${{ secrets.HF_SPACE_NAME }}:latest
+        run: docker push registry.huggingface.co/${{ secrets.HF_USERNAME }}/${{ secrets.HF_SPACE_NAME }}:latest
 
       # Optionally, trigger a Space restart via the API (not strictly required)
       - name: Restart Hugging Face Space
