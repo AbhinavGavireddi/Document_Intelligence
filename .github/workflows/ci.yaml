@@ -26,6 +26,7 @@ jobs:
 
   deploy-to-hf:
     runs-on: ubuntu-latest
+    needs: build-and-test
     environment: prod
     steps:
       - name: Checkout code
@@ -63,7 +64,13 @@ jobs:
 
           # Add HF Space repo as remote and push
           git remote add hf https://huggingface.co/spaces/${HF_USERNAME}/${HF_SPACE_NAME}.git
-          git push hf main
+          
+          git fetch hf main
+          git rebase hf/main || git merge --strategy=ours hf/main
+
+          # Push (force to ensure the workflow always succeeds, or use --force-with-lease for safety)
+          git push hf main --force
+          
           # Optional: Restart Space via API
           python -c "
           from huggingface_hub import HfApi;
