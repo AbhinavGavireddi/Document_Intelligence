@@ -1,10 +1,12 @@
 ---
 title: Document Intelligence
-emoji: 📝
-colorFrom:rgb(3, 243, 83)
-colorTo:rgb(5, 9, 240)
+emoji: 🐢
+colorFrom: indigo
+colorTo: red
 sdk: streamlit
-sdk_version: 1.40.0
+sdk_version: 1.44.1
 app_file: app.py
 pinned: false
 ---
+
+Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
