@@ -31,15 +31,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0  # Full git history if needed for versioning or changelog
+          fetch-depth: 0  # full history if you need versioning
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'  # Use whatever version you prefer
+          python-version: '3.10'
 
       - name: Install Hugging Face Hub client
         run: pip install huggingface_hub
+
+      - name: Configure Git credential helper
+        run: |
+          # Use the "store" helper so huggingface-cli can write credentials here
+          git config --global credential.helper store
 
       - name: Push to Hugging Face Space
         env:
@@ -47,20 +52,19 @@ jobs:
           HF_USERNAME: ${{ secrets.HF_USERNAME }}
           HF_SPACE_NAME: ${{ secrets.HF_SPACE_NAME }}
         run: |
-          echo "Pushing latest code to Hugging Face Space"
-          git config --global user.email "anb7243@gmail.com"
-          git config --global user.name "Abhinav_Gavireddi"
+          echo "🚀 Pushing code to HF Space..."
 
-          # Set up Hugging Face CLI
-          huggingface-cli login --token "$HF_TOKEN"
+          # Configure Git identity
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
 
-          # Add Hugging Face as remote
-          git remote add hf https://huggingface.co/spaces/${HF_USERNAME}/${HF_SPACE_NAME}
+          # Login and add the token to Git credential store
+          huggingface-cli login --token "$HF_TOKEN" --add-to-git-credential
 
-          # Push code to the Space repo
+          # Add HF Space repo as remote and push
+          git remote add hf https://huggingface.co/spaces/${HF_USERNAME}/${HF_SPACE_NAME}.git
           git push hf main
-
-          # Optional: Restart Space via API (defensive move)
+          # Optional: Restart Space via API
           python -c "
           from huggingface_hub import HfApi;
           api = HfApi(token='$HF_TOKEN');
