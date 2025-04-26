@@ -39,7 +39,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to Hugging Face Docker
-        run: echo "${{ secrets.HF_TOKEN }}" | docker login --username ${{ secrets.HF_USERNAME }} --password-stdin docker.io
+        run: echo "${{ secrets.HF_TOKEN }}" | docker login --username ${{ secrets.HF_USERNAME }} --password-stdin registry.huggingface.co
 
       - name: Build Docker image
         run: docker build -t docker.io/${{ secrets.HF_USERNAME }}/${{ secrets.HF_SPACE_NAME }}:latest .
