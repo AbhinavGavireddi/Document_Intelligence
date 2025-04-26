@@ -1,0 +1,36 @@
+name: CI & Deploy
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    # … your existing test setup …
+
+  deploy-to-hf:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'  # only on main branch
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0            # needed to push full history
+
+      - name: Set up Docker credentials
+        run: echo "${{ secrets.HF_TOKEN }}" | docker login --username ${{ secrets.HF_USERNAME }} --password-stdin docker.pkg.github.com
+
+      - name: Install Hugging Face CLI
+        run: pip install huggingface_hub
+
+      - name: Log in to Hugging Face
+        run: |
+          huggingface-cli login --token ${{ secrets.HF_TOKEN }}
+
+      - name: Push to Hugging Face Space
+        run: |
+          git remote add hf https://huggingface.co/spaces/${{ secrets.HF_USERNAME }}/${{ secrets.HF_SPACE_NAME }}.git
+          git push hf main --force

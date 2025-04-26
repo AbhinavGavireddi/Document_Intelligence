@@ -1,0 +1,12 @@
+# Core
+streamlit>=1.25.0
+mineru>=0.1.0
+sentence-transformers>=2.2.2
+rank-bm25>=0.2.2
+redis>=4.5.1
+transformers>=4.29.2
+torch>=2.0.0
+openai>=0.27.0
+huggingface-hub>=0.16.4
+# For testing
+pytest>=7.0
