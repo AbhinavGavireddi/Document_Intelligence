@@ -30,7 +30,7 @@ RUN pip uninstall -y magic-pdf && \
 
 # Copy application code
 COPY src/ ./src/
-COPY tests/ ./tests/
+# COPY tests/ ./tests/
 COPY app.py .
 
 # Expose Streamlit port
