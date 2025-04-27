@@ -3,7 +3,9 @@ Utilities module: LLM client wrapper and shared helpers.
 """
 import os
 import openai
-from openai import AzureOpenAI, error
+from typing import List
+from openai import AzureOpenAI
+from langchain_openai import AzureOpenAIEmbeddings
 
 try:
     from src.utils import logger
@@ -32,7 +34,7 @@ class LLMClient:
                 api_version=azure_api_version
             )
         try:
-            resp = client.ChatCompletion.create(
+            resp = client.chat.completions.create(
                 model=openai_model_name,
                 messages=[{"role": "system", "content": "You are a helpful assistant."},
                           {"role": "user", "content": prompt}],
@@ -42,9 +44,23 @@ class LLMClient:
             )
             text = resp.choices[0].message.content.strip()
             return text
-        except openai.error.OpenAIError as oe:
-            logger.error(f'OpenAI API error: {oe}')
-            raise
         except Exception as e:
             logger.exception('LLM generation failed')
             raise
+
+
+class OpenAIEmbedder:
+    """
+    Wrapper around OpenAI Embeddings API. 
+    Usage: embedder = OpenAIEmbedder(model_name)
+           embs = embedder.embed([str1, str2, ...])
+    """
+    def __init__(self, model_name: str):
+        self.model = model_name
+        openai.api_key = os.getenv("OPENAI_API_KEY")
+
+    def embed(self, texts: List[str]) -> List[List[float]]:
+        embeddings = AzureOpenAIEmbeddings(model=self.model)
+        resp = embeddings.embed_documents(texts)
+        # return list of embedding vectors
+        return resp

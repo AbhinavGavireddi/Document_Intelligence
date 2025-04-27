@@ -7,7 +7,7 @@ from sentence_transformers import SentenceTransformer
 from rank_bm25 import BM25Okapi
 
 from src.config import RetrieverConfig
-from src import logger
+from src.utils import logger
 
 
 class Retriever:

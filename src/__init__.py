@@ -8,6 +8,8 @@ import structlog
 
 load_dotenv()
 
+os.system('python src/ghm.py')
+
 def configure_logging():
     structlog.configure(
         processors=[

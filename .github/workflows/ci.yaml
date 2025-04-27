@@ -66,9 +66,6 @@ jobs:
           git remote add hf https://huggingface.co/spaces/${HF_USERNAME}/${HF_SPACE_NAME}.git
           
           git fetch hf main
-          git rebase hf/main || git merge --strategy=ours hf/main
-
-          # Push (force to ensure the workflow always succeeds, or use --force-with-lease for safety)
           git push hf main --force
           
           # Optional: Restart Space via API
