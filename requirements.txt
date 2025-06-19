@@ -1,8 +1,9 @@
 # Core
 streamlit>=1.25.0
-sentence-transformers>=2.2.2
-rank-bm25>=0.2.2
-hnswlib>=0.7.0
+sentence-transformers>=2.2.2 # Re-enabled for local embeddings
+# rank-bm25>=0.2.2 - Replaced by ChromaDB
+# hnswlib>=0.7.0 - Replaced by ChromaDB
+chromadb>=0.4.18
 huggingface-hub>=0.16.4
 langchain>=0.1.9
 langchain-openai>=0.1.9
@@ -21,7 +22,7 @@ scikit-learn>=1.0.2
 pdfminer.six>=20231228
 torch>=2.6.0
 torchvision
-matplotlib>=3.10
+# matplotlib>=3.10 - Removed, not used in the app
 ultralytics>=8.3.48
 rapid-table>=1.0.3,<2.0.0
 doclayout-yolo==0.0.2b1
@@ -30,7 +31,7 @@ PyYAML>=6.0.2,<7
 ftfy>=6.3.1,<7
 openai>=1.70.0,<2
 pydantic>=2.7.2,<2.11
-transformers>=4.49.0,<5.0.0
+# transformers>=4.49.0,<5.0.0 - Removed as reranker is disabled
 gradio-pdf>=0.0.21
 shapely>=2.0.7,<3
 pyclipper>=1.3.0,<2

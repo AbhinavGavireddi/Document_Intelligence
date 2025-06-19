@@ -17,10 +17,10 @@ import os
 import json
 from typing import List, Dict, Any, Optional
 import re
+import numpy as np
 
-from src import EmbeddingConfig, GPPConfig
+from src import EmbeddingConfig, GPPConfig, logger, get_embedder, get_chroma_client
 from src.utils import OpenAIEmbedder, LLMClient
-from src import logger
 
 def parse_markdown_table(md: str) -> Optional[Dict[str, Any]]:
     """
@@ -49,21 +49,8 @@ def parse_markdown_table(md: str) -> Optional[Dict[str, Any]]:
 class GPP:
     def __init__(self, config: GPPConfig):
         self.config = config
-        # Lazy import heavy libraries
-        from sentence_transformers import SentenceTransformer
-        # Embedding models
-        if EmbeddingConfig.PROVIDER == "openai":
-            self.text_embedder = OpenAIEmbedder(EmbeddingConfig.TEXT_MODEL)
-            self.meta_embedder = OpenAIEmbedder(EmbeddingConfig.META_MODEL)
-        else:
-            self.text_embedder = SentenceTransformer(
-                EmbeddingConfig.TEXT_MODEL, use_auth_token=True
-            )
-            self.meta_embedder = SentenceTransformer(
-                EmbeddingConfig.META_MODEL, use_auth_token=True
-            )
-
-        self.bm25 = None
+        self.text_embedder = get_embedder()
+        self.chroma_client = get_chroma_client()
 
     def parse_pdf(self, pdf_path: str, output_dir: str) -> Dict[str, Any]:
         """
@@ -168,27 +155,23 @@ class GPP:
 
     def deduplicate(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         try:
-            # Lazy import heavy libraries
-            import numpy as np
-            from sentence_transformers import SentenceTransformer
-            
             narrations = [c.get("narration", "") for c in chunks]
-            if EmbeddingConfig.PROVIDER == "openai":
-                embs = self.text_embedder.embed(narrations)
-            else:
-                embs = self.text_embedder.encode(narrations)
+            embs = self.text_embedder.embed(narrations)
+            
+            # Simple cosine similarity check
+            keep_indices = []
+            for i in range(len(embs)):
+                is_duplicate = False
+                for j_idx in keep_indices:
+                    sim = np.dot(embs[i], embs[j_idx]) / (np.linalg.norm(embs[i]) * np.linalg.norm(embs[j_idx]))
+                    if sim > self.config.DEDUP_SIM_THRESHOLD:
+                        is_duplicate = True
+                        break
+                if not is_duplicate:
+                    keep_indices.append(i)
 
-            keep = []
-            for i, emb in enumerate(embs):
-                if not any(
-                    (emb @ embs[j]).item()
-                    / (np.linalg.norm(emb) * np.linalg.norm(embs[j]) + 1e-8)
-                    > self.config.DEDUP_SIM_THRESHOLD
-                    for j in keep
-                ):
-                    keep.append(i)
-            deduped = [chunks[i] for i in keep]
-            logger.info(f"Deduplicated: {len(chunks)}→{len(deduped)}")
+            deduped = [chunks[i] for i in keep_indices]
+            logger.info(f"Deduplicated: {len(chunks)} -> {len(deduped)}")
             return deduped
         except Exception as e:
             logger.error(f"Deduplication failed: {e}")
@@ -198,7 +181,7 @@ class GPP:
         for idx, c in enumerate(chunks):
             start = max(0, idx - self.config.COREF_CONTEXT_SIZE)
             ctx = "\n".join(chunks[i].get("narration", "") for i in range(start, idx))
-            prompt = f"Context:\n{ctx}\nRewrite pronouns in:\n{c.get('narration', '')}"
+            prompt = f"Context:\n{ctx}\nRewrite pronouns in:\n{c.get('narration', '')}\n\n give only the rewritten text, no other text"
             try:
                 c["narration"] = LLMClient.generate(prompt)
             except Exception as e:
@@ -212,134 +195,68 @@ class GPP:
         for sec, items in sections.items():
             blob = "\n".join(i.get("narration", "") for i in items)
             try:
-                summ = LLMClient.generate(f"Summarize this section:\n{blob}")
+                summ = LLMClient.generate(f"Summarize this section:\n{blob}\n\n give only the summarized text, no other text")
                 for i in items:
                     i.setdefault("metadata", {})["section_summary"] = summ
             except Exception as e:
                 logger.error(f"Metadata summarization failed for section {sec}: {e}")
 
-    def build_bm25(self, chunks: List[Dict[str, Any]]) -> None:
+    def store_in_chroma(self, chunks: List[Dict[str, Any]], collection_name: str) -> None:
         """
-        Build BM25 index on token lists for sparse retrieval.
+        Computes embeddings and stores the chunks in a ChromaDB collection.
         """
-        # Lazy import heavy libraries
-        from rank_bm25 import BM25Okapi
+        if not chunks:
+            logger.warning("No chunks to store in ChromaDB.")
+            return
+
+        collection = self.chroma_client.get_or_create_collection(name=collection_name)
         
-        tokenized = [c["narration"].split() for c in chunks]
-        self.bm25 = BM25Okapi(tokenized)
-
-    def compute_and_store(self, chunks: List[Dict[str, Any]], output_dir: str) -> None:
-        """
-        1. Compute embeddings for each chunk's narration (text_vec)
-           and section_summary (meta_vec).
-        2. Build two HNSWlib indices (one for text_vecs, one for meta_vecs).
-        3. Save both indices to disk.
-        4. Dump human-readable chunk metadata (incl. section_summary)
-           for traceability in the UI.
-        """
-        # Lazy import heavy libraries
-        import numpy as np
-        import hnswlib
-        from sentence_transformers import SentenceTransformer
-
-        # --- 1. Prepare embedder ---
-        if EmbeddingConfig.PROVIDER.lower() == "openai":
-            embedder = OpenAIEmbedder(EmbeddingConfig.TEXT_MODEL)
-            embed_fn = embedder.embed
-        else:
-            st_model = SentenceTransformer(
-                EmbeddingConfig.TEXT_MODEL, use_auth_token=True
+        # Prepare data for ChromaDB
+        documents = [c['narration'] for c in chunks]
+        metadatas = []
+        for chunk in chunks:
+            # metadata can only contain str, int, float, bool
+            meta = {k: v for k, v in chunk.items() if k not in ['narration', 'text', 'id'] and type(v) in [str, int, float, bool]}
+            meta['text'] = chunk.get('text', '') # Add original text to metadata
+            metadatas.append(meta)
+        
+        ids = [str(c['id']) for c in chunks]
+        
+        logger.info(f"Storing {len(chunks)} chunks in ChromaDB collection '{collection_name}'...")
+        try:
+            collection.add(
+                ids=ids,
+                documents=documents,
+                metadatas=metadatas
             )
-            embed_fn = lambda texts: st_model.encode(
-                texts, show_progress_bar=False
-            ).tolist()
+            logger.info("Successfully stored chunks in ChromaDB.")
+        except Exception as e:
+            logger.error(f"Failed to store chunks in ChromaDB: {e}")
+            raise
 
-        # Batch compute text & meta embeddings ---
-        narrations = [c["narration"] for c in chunks]
-        meta_texts = [c.get("section_summary", "") for c in chunks]
-        logger.info(
-            "computing_embeddings",
-            provider=EmbeddingConfig.PROVIDER,
-            num_chunks=len(chunks),
-        )
-
-        text_vecs = embed_fn(narrations)
-        meta_vecs = embed_fn(meta_texts)
-
-        if len(text_vecs) != len(chunks) or len(meta_vecs) != len(chunks):
-            raise RuntimeError(
-                f"Embedding count mismatch: text_vecs={len(text_vecs)}, meta_vecs={len(meta_vecs)}, chunks={len(chunks)}"
-            )
-
-        # Convert to numpy arrays
-        text_matrix = np.vstack(text_vecs).astype(np.float32)
-        meta_matrix = np.vstack(meta_vecs).astype(np.float32)
-
-        # Build HNSW indices ---
-        dim = text_matrix.shape[1]
-        text_index = hnswlib.Index(space="cosine", dim=dim)
-        text_index.init_index(
-            max_elements=len(chunks),
-            ef_construction=GPPConfig.HNSW_EF_CONSTRUCTION,
-            M=GPPConfig.HNSW_M,
-        )
-        ids = [c["id"] for c in chunks]
-        text_index.add_items(text_matrix, ids)
-        text_index.set_ef(GPPConfig.HNSW_EF_SEARCH)
-        logger.info("text_hnsw_built", elements=len(chunks))
-
-        # Meta index (same dim)
-        meta_index = hnswlib.Index(space="cosine", dim=dim)
-        meta_index.init_index(
-            max_elements=len(chunks),
-            ef_construction=GPPConfig.HNSW_EF_CONSTRUCTION,
-            M=GPPConfig.HNSW_M,
-        )
-        meta_index.add_items(meta_matrix, ids)
-        meta_index.set_ef(GPPConfig.HNSW_EF_SEARCH)
-        logger.info("meta_hnsw_built", elements=len(chunks))
-
-        # Persist indices to disk ---
-        text_idx_path = os.path.join(output_dir, "hnsw_text_index.bin")
-        meta_idx_path = os.path.join(output_dir, "hnsw_meta_index.bin")
-        text_index.save_index(text_idx_path)
-        meta_index.save_index(meta_idx_path)
-        logger.info(
-            "hnsw_indices_saved", text_index=text_idx_path, meta_index=meta_idx_path
-        )
-
-        # Dump chunk metadata for UI traceability ---
-        meta_path = os.path.join(output_dir, "chunk_metadata.json")
-        metadata = {
-            str(c["id"]): {
-                "text": c.get("text", ""),
-                "narration": c["narration"],
-                "type": c.get("type", ""),
-                "section_summary": c.get("section_summary", ""),
-            }
-            for c in chunks
-        }
-        with open(meta_path, "w", encoding="utf-8") as f:
-            json.dump(metadata, f, ensure_ascii=False, indent=2)
-        logger.info("chunk_metadata_saved", path=meta_path)
-
-    def run(self, pdf_path: str, output_dir: str) -> Dict[str, Any]:
+    def run(self, pdf_path: str, output_dir: str, collection_name: str) -> Dict[str, Any]:
         """
-        Executes full GPP: parse -> chunk -> narrate -> enhance -> index.
-        Returns parse output dict augmented with `chunks` for downstream processes.
+        Executes a streamlined GPP: parse -> chunk -> narrate -> store.
+        Heavy enhancement steps are bypassed for maximum efficiency.
         """
-        parsed = self.parse_pdf(pdf_path, output_dir)
-        blocks = parsed.get("blocks", [])
+        parsed_output = self.parse_pdf(pdf_path, output_dir)
+        blocks = parsed_output.get("blocks", [])
+        
         chunks = self.chunk_blocks(blocks)
-        # assigning ID's to chuncks for traceability
         for idx, chunk in enumerate(chunks):
             chunk["id"] = idx
+            
         self.narrate_multimodal(chunks)
-        chunks = self.deduplicate(chunks)
-        self.coref_resolution(chunks)
-        self.metadata_summarization(chunks)
-        self.build_bm25(chunks)
-        self.compute_and_store(chunks, output_dir)
-        parsed["chunks"] = chunks
-        logger.info("GPP pipeline complete.")
-        return parsed
+        
+        # NOTE: Heavy enhancement steps are disabled for performance.
+        # To re-enable, uncomment the following lines:
+        # chunks = self.deduplicate(chunks)
+        # self.coref_resolution(chunks)
+        # self.metadata_summarization(chunks)
+        
+        self.store_in_chroma(chunks, collection_name)
+        
+        parsed_output["chunks"] = chunks
+        parsed_output["collection_name"] = collection_name
+        logger.info("GPP pipeline complete. Data stored in ChromaDB.")
+        return parsed_output

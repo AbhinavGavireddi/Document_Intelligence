@@ -9,94 +9,95 @@ This module contains:
 Each component is modular and can be swapped or extended (e.g., add HyDE retriever).
 """
 import os
+import random
 from typing import List, Dict, Any, Tuple
-import streamlit as st
 
-from src import RerankerConfig, logger
+from src import logger, RetrieverConfig
 from src.utils import LLMClient
-from src.retriever import Retriever, RetrieverConfig
-
-class Reranker:
-    """
-    Cross-encoder re-ranker using a transformer-based sequence classification model.
-    """
-    @staticmethod
-    @st.cache_resource(show_spinner="Loading reranker model...")
-    def load_model_and_tokenizer(model_name, device):
-        from transformers import AutoTokenizer, AutoModelForSequenceClassification
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        model = AutoModelForSequenceClassification.from_pretrained(model_name)
-        model.to(device)
-        return tokenizer, model
-
-    def __init__(self, config: RerankerConfig):
-        try:
-            self.tokenizer, self.model = self.load_model_and_tokenizer(config.MODEL_NAME, config.DEVICE)
-        except Exception as e:
-            logger.error(f'Failed to load reranker model: {e}')
-            raise
-
-    def rerank(self, query: str, candidates: List[Dict[str, Any]], top_k: int) -> List[Dict[str, Any]]:
-        """Score each candidate and return top_k sorted by relevance."""
-        if not candidates:
-            logger.warning('No candidates provided to rerank.')
-            return []
-        try:
-            import torch
-            inputs = self.tokenizer(
-                [query] * len(candidates),
-                [c.get('narration', '') for c in candidates],
-                padding=True,
-                truncation=True,
-                return_tensors='pt'
-            ).to(RerankerConfig.DEVICE)
-            with torch.no_grad():
-                out = self.model(**inputs)
-            
-            logits = out.logits
-            if logits.ndim == 2 and logits.shape[1] == 1:
-                logits = logits.squeeze(-1)  # only squeeze if it's (batch, 1)
-
-            probs = torch.sigmoid(logits).cpu().numpy().flatten()  # flatten always ensures 1D array
-            paired = [(c, float(probs[idx])) for idx, c in enumerate(candidates)]
-
-            ranked = sorted(paired, key=lambda x: x[1], reverse=True)
-            return [c for c, _ in ranked[:top_k]]
-        except Exception as e:
-            logger.error(f'Reranking failed: {e}')
-            return candidates[:top_k]
-
+from src.retriever import Retriever
 
 class AnswerGenerator:
     """
-    Main interface: initializes Retriever + Reranker once, then
-    answers multiple questions without re-loading models each time.
+    Generates answers by retrieving documents from a vector store
+    and using them to build a context for an LLM.
+    This version is optimized for low latency by skipping the reranking step.
     """
-    def __init__(self, chunks: List[Dict[str, Any]]):
-        self.chunks = chunks
-        self.retriever = Retriever(chunks, RetrieverConfig)
-        self.reranker  = Reranker(RerankerConfig)
-        self.top_k = RetrieverConfig.TOP_K // 2
+    def __init__(self, collection_name: str):
+        self.retriever = Retriever(collection_name, RetrieverConfig)
+        self.context_chunks_count = 5 # Use top 5 chunks for the final prompt
+        self.greetings = [
+            "Hello! I'm ready to answer your questions about the document. What would you like to know?",
+            "Hi there! How can I help you with your document today?",
+            "Hey! I've got the document open and I'm ready for your questions.",
+            "Greetings! Ask me anything about the document, and I'll do my best to find the answer for you."
+        ]
 
-    def answer(
-        self, question: str
-    ) -> Tuple[str, List[Dict[str, Any]]]:
+    def _truncate_to_last_sentence(self, text: str) -> str:
+        """Finds the last period or newline and truncates the text to that point."""
+        # Find the last period
+        last_period = text.rfind('.')
+        # Find the last newline
+        last_newline = text.rfind('\n')
+        # Find the last of the two
+        last_marker = max(last_period, last_newline)
+
+        if last_marker != -1:
+            return text[:last_marker + 1].strip()
+        
+        # If no sentence-ending punctuation, return the text as is (or a portion)
+        return text
+
+    def answer(self, question: str) -> Tuple[str, List[Dict[str, Any]]]:
+        """
+        Retrieves documents, builds a context, and generates an answer.
+        Handles simple greetings separately to improve user experience.
+        """
+        # Handle simple greetings to avoid a failed retrieval
+        normalized_question = question.lower().strip().rstrip('.,!')
+        greeting_triggers = ["hi", "hello", "hey", "hallo", "hola"]
+        if normalized_question in greeting_triggers:
+            return random.choice(self.greetings), []
+
+        # Retrieve candidate documents from the vector store
         candidates = self.retriever.retrieve(question)
-        top_chunks = self.reranker.rerank(question, candidates, self.top_k)
+        
+        if not candidates:
+            logger.warning("No candidates retrieved from vector store.")
+            return "The document does not contain information on this topic.", []
+        
+        # Use the top N chunks for context, without reranking
+        top_chunks = candidates[:self.context_chunks_count]
+        
         context = "\n\n".join(f"- {c['narration']}" for c in top_chunks)
+        
+        # A more robust prompt that encourages a natural, conversational tone
         prompt = (
-            "You are a knowledgeable assistant. Use the following snippets to answer."
-            f"\n\nContext information is below: \n"
-            '------------------------------------'
-            f"{context}"
-            '------------------------------------'
-            "Given the context information above I want you \n"
-            "to think step by step to answer the query in a crisp \n"
-            "manner, incase you don't have enough information, \n"
-            "just say I don't know!. \n\n"
-            f"\n\nQuestion: {question} \n"
+            "You are a helpful and friendly AI assistant for document analysis. "
+            "Your user is asking a question about a document. "
+            "Based *only* on the context provided below, formulate a clear and conversational answer. "
+            "Adopt a helpful and slightly informal tone, as if you were a knowledgeable colleague.\n\n"
+            "CONTEXT:\n"
+            "---------------------\n"
+            f"{context}\n"
+            "---------------------\n\n"
+            "USER'S QUESTION: "
+            f'"{question}"\n\n'
+            "YOUR TASK:\n"
+            "1. Carefully read the provided context.\n"
+            "2. If the context contains the answer, explain it to the user in a natural, conversational way. Do not just repeat the text verbatim.\n"
+            "3. If the context does not contain the necessary information, respond with: "
+            "'I've checked the document, but I couldn't find any information on that topic.'\n"
+            "4. **Crucially, do not use any information outside of the provided context.**\n\n"
             "Answer:"
         )
-        answer = LLMClient.generate(prompt)
+        
+        answer, finish_reason = LLMClient.generate(prompt, max_tokens=256)
+
+        # Handle cases where the response might be cut off
+        if finish_reason == 'length':
+            logger.warning("LLM response was truncated due to token limit.")
+            truncated_answer = self._truncate_to_last_sentence(answer)
+            answer = truncated_answer + " ... (response shortened)"
+
         return answer, top_chunks
 
