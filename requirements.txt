@@ -47,3 +47,4 @@ loguru>=0.7.2
 unstructured>=0.12.6
 magic_pdf>=0.9.12
 pycocotools
+detectron2
