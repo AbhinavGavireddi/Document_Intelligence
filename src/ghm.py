@@ -60,7 +60,7 @@ def initialize_models():
     # shutil.copytree(paddleocr_model_dir, user_paddleocr_dir)
 
     json_url = 'https://github.com/opendatalab/MinerU/raw/master/mineru.template.json'
-    config_file_name = 'mineru.json'
+    config_file_name = 'magic-pdf.json'
     home_dir = os.path.expanduser('~')
     config_file = os.path.join(home_dir, config_file_name)
 
