@@ -15,21 +15,21 @@ RUN apt-get update && \
     # for hnswlib (needed for OpenMP)
     libgomp1 \
     curl \
-    git \
-    && rm -rf /var/lib/apt/lists/*
+    git && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy and install Python dependencies
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install uv && \
+    uv pip install --no-cache-dir -r requirements.txt
 
-# Install/patch MinerU and download models
-RUN pip uninstall -y magic-pdf && \
-    pip install git+https://github.com/opendatalab/MinerU.git@dev && \
-    curl -L https://github.com/opendatalab/MinerU/raw/dev/scripts/download_models_hf.py -o download_models_hf.py && \
+# Download models (if needed at build time)
+RUN curl -L https://github.com/opendatalab/MinerU/raw/dev/scripts/download_models_hf.py -o download_models_hf.py && \
     python download_models_hf.py
 
 # Copy application code
 COPY src/ ./src/
+
 # COPY tests/ ./tests/
 COPY app.py .
 

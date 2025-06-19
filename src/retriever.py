@@ -1,27 +1,19 @@
 import os
-import numpy as np
-import hnswlib
 from typing import List, Dict, Any
-
-from sentence_transformers import SentenceTransformer
-from rank_bm25 import BM25Okapi
 
 from src.config import RetrieverConfig
 from src.utils import logger
-
 
 class Retriever:
     """
     Hybrid retriever combining BM25 sparse and dense retrieval (no Redis).
     """
     def __init__(self, chunks: List[Dict[str, Any]], config: RetrieverConfig):
-        """
-        Initialize the retriever with chunks and configuration.
-
-        Args:
-        chunks (List[Dict[str, Any]]): List of chunks, where each chunk is a dictionary.
-        config (RetrieverConfig): Configuration for the retriever.
-        """
+        # Lazy import heavy libraries
+        import numpy as np
+        import hnswlib
+        from sentence_transformers import SentenceTransformer
+        from rank_bm25 import BM25Okapi
         self.chunks = chunks
         try:
             if not isinstance(chunks, list) or not all(isinstance(c, dict) for c in chunks):
@@ -58,6 +50,7 @@ class Retriever:
             return []
         tokenized = query.split()
         try:
+            import numpy as np  # Ensure np is defined here
             scores = self.bm25.get_scores(tokenized)
             top_indices = np.argsort(scores)[::-1][:top_k]
             return [self.chunks[i] for i in top_indices]

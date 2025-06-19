@@ -11,19 +11,9 @@ Each component is modular and can be swapped or extended (e.g., add HyDE retriev
 import os
 from typing import List, Dict, Any, Tuple
 
-from sentence_transformers import SentenceTransformer
-from rank_bm25 import BM25Okapi
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
-import torch
-
-from src import sanitize_html
+from src import RerankerConfig
 from src.utils import LLMClient, logger
 from src.retriever import Retriever, RetrieverConfig
-
-
-class RerankerConfig:
-    MODEL_NAME = os.getenv('RERANKER_MODEL', 'BAAI/bge-reranker-v2-Gemma')
-    DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 class Reranker:
     """
@@ -31,6 +21,8 @@ class Reranker:
     """
     def __init__(self, config: RerankerConfig):
         try:
+            from transformers import AutoTokenizer, AutoModelForSequenceClassification
+            import torch
             self.tokenizer = AutoTokenizer.from_pretrained(config.MODEL_NAME)
             self.model = AutoModelForSequenceClassification.from_pretrained(config.MODEL_NAME)
             self.model.to(config.DEVICE)
@@ -44,6 +36,7 @@ class Reranker:
             logger.warning('No candidates provided to rerank.')
             return []
         try:
+            import torch
             inputs = self.tokenizer(
                 [query] * len(candidates),
                 [c.get('narration', '') for c in candidates],
@@ -59,10 +52,7 @@ class Reranker:
                 logits = logits.squeeze(-1)  # only squeeze if it's (batch, 1)
 
             probs = torch.sigmoid(logits).cpu().numpy().flatten()  # flatten always ensures 1D array
-            paired = []
-            for idx, c in enumerate(candidates):
-                score = float(probs[idx])
-                paired.append((c, score))
+            paired = [(c, float(probs[idx])) for idx, c in enumerate(candidates)]
 
             ranked = sorted(paired, key=lambda x: x[1], reverse=True)
             return [c for c, _ in ranked[:top_k]]

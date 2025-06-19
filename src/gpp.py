@@ -18,23 +18,8 @@ import json
 from typing import List, Dict, Any, Optional
 import re
 
-from magic_pdf.data.data_reader_writer import FileBasedDataWriter, FileBasedDataReader
-from magic_pdf.data.dataset import PymuDocDataset
-from magic_pdf.model.doc_analyze_by_custom_model import doc_analyze
-from magic_pdf.config.enums import SupportedPdfParseMethod
-
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from sentence_transformers import SentenceTransformer
-from rank_bm25 import BM25Okapi
-import numpy as np
-import hnswlib
-
-from src.config import EmbeddingConfig
-from src.utils import OpenAIEmbedder
-
-# LLM client abstraction
-from src.utils import LLMClient, logger
-
+from src import EmbeddingConfig, GPPConfig
+from src.utils import OpenAIEmbedder, LLMClient, logger
 
 def parse_markdown_table(md: str) -> Optional[Dict[str, Any]]:
     """
@@ -60,23 +45,11 @@ def parse_markdown_table(md: str) -> Optional[Dict[str, Any]]:
     return {"headers": headers, "rows": rows}
 
 
-class GPPConfig:
-    """
-    Configuration for GPP pipeline.
-    """
-
-    CHUNK_TOKEN_SIZE = 256
-    DEDUP_SIM_THRESHOLD = 0.9
-    EXPANSION_SIM_THRESHOLD = 0.85
-    COREF_CONTEXT_SIZE = 3
-    HNSW_EF_CONSTRUCTION = int(os.getenv("HNSW_EF_CONSTRUCTION", "200"))
-    HNSW_M = int(os.getenv("HNSW_M", "16"))
-    HNSW_EF_SEARCH = int(os.getenv("HNSW_EF_SEARCH", "50"))
-
-
 class GPP:
     def __init__(self, config: GPPConfig):
         self.config = config
+        # Lazy import heavy libraries
+        from sentence_transformers import SentenceTransformer
         # Embedding models
         if EmbeddingConfig.PROVIDER == "openai":
             self.text_embedder = OpenAIEmbedder(EmbeddingConfig.TEXT_MODEL)
@@ -97,6 +70,12 @@ class GPP:
         dumps markdown, images, layout PDF, content_list JSON.
         Returns parsed data plus file paths for UI traceability.
         """
+        # Lazy import heavy libraries
+        from magic_pdf.data.data_reader_writer import FileBasedDataWriter, FileBasedDataReader
+        from magic_pdf.data.dataset import PymuDocDataset
+        from magic_pdf.model.doc_analyze_by_custom_model import doc_analyze
+        from magic_pdf.config.enums import SupportedPdfParseMethod
+        
         name = os.path.splitext(os.path.basename(pdf_path))[0]
         img_dir = os.path.join(output_dir, "images")
         os.makedirs(img_dir, exist_ok=True)
@@ -138,6 +117,9 @@ class GPP:
         Creates chunks of ~CHUNK_TOKEN_SIZE tokens, but ensures any table/image block
         becomes its own chunk (unsplittable), flushing current text chunk as needed.
         """
+        # Lazy import heavy libraries
+        from langchain.text_splitter import RecursiveCharacterTextSplitter
+        
         chunks, current, token_count = [], {"text": "", "type": None, "blocks": []}, 0
         for blk in blocks:
             btype = blk.get("type")
@@ -185,7 +167,10 @@ class GPP:
 
     def deduplicate(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         try:
-            # embs = self.text_embedder.encode([c.get('narration', '') for c in chunks], convert_to_tensor=True)
+            # Lazy import heavy libraries
+            import numpy as np
+            from sentence_transformers import SentenceTransformer
+            
             narrations = [c.get("narration", "") for c in chunks]
             if EmbeddingConfig.PROVIDER == "openai":
                 embs = self.text_embedder.embed(narrations)
@@ -236,6 +221,9 @@ class GPP:
         """
         Build BM25 index on token lists for sparse retrieval.
         """
+        # Lazy import heavy libraries
+        from rank_bm25 import BM25Okapi
+        
         tokenized = [c["narration"].split() for c in chunks]
         self.bm25 = BM25Okapi(tokenized)
 
@@ -248,6 +236,11 @@ class GPP:
         4. Dump human-readable chunk metadata (incl. section_summary)
            for traceability in the UI.
         """
+        # Lazy import heavy libraries
+        import numpy as np
+        import hnswlib
+        from sentence_transformers import SentenceTransformer
+
         # --- 1. Prepare embedder ---
         if EmbeddingConfig.PROVIDER.lower() == "openai":
             embedder = OpenAIEmbedder(EmbeddingConfig.TEXT_MODEL)
