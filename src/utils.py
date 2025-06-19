@@ -6,7 +6,7 @@ import openai
 from typing import List
 from openai import AzureOpenAI
 from langchain_openai import AzureOpenAIEmbeddings
-from src import logger  # Import logger from src/__init__.py
+from src import logger
 
 
 class LLMClient:

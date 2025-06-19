@@ -1,18 +1,23 @@
 import os
 from typing import List, Dict, Any
+import streamlit as st
 
-from src.config import RetrieverConfig
-from src import logger  # Use logger from src/__init__.py
+from src import RetrieverConfig, logger
 
 class Retriever:
     """
     Hybrid retriever combining BM25 sparse and dense retrieval (no Redis).
     """
+    @staticmethod
+    @st.cache_resource(show_spinner="Loading embedding model...")
+    def load_embedder(model_name):
+        from sentence_transformers import SentenceTransformer
+        return SentenceTransformer(model_name)
+
     def __init__(self, chunks: List[Dict[str, Any]], config: RetrieverConfig):
         # Lazy import heavy libraries
         import numpy as np
         import hnswlib
-        from sentence_transformers import SentenceTransformer
         from rank_bm25 import BM25Okapi
         self.chunks = chunks
         try:
@@ -21,7 +26,7 @@ class Retriever:
                 raise ValueError("Chunks must be a list of dicts.")
             corpus = [c.get('narration', '').split() for c in chunks]
             self.bm25 = BM25Okapi(corpus)
-            self.embedder = SentenceTransformer(config.DENSE_MODEL)
+            self.embedder = self.load_embedder(config.DENSE_MODEL)
             dim = len(self.embedder.encode(["test"])[0])
             self.ann = hnswlib.Index(space='cosine', dim=dim)
             self.ann.init_index(max_elements=len(chunks))

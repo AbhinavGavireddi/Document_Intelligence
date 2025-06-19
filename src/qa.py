@@ -10,6 +10,7 @@ Each component is modular and can be swapped or extended (e.g., add HyDE retriev
 """
 import os
 from typing import List, Dict, Any, Tuple
+import streamlit as st
 
 from src import RerankerConfig, logger
 from src.utils import LLMClient
@@ -19,13 +20,18 @@ class Reranker:
     """
     Cross-encoder re-ranker using a transformer-based sequence classification model.
     """
+    @staticmethod
+    @st.cache_resource(show_spinner="Loading reranker model...")
+    def load_model_and_tokenizer(model_name, device):
+        from transformers import AutoTokenizer, AutoModelForSequenceClassification
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        model = AutoModelForSequenceClassification.from_pretrained(model_name)
+        model.to(device)
+        return tokenizer, model
+
     def __init__(self, config: RerankerConfig):
         try:
-            from transformers import AutoTokenizer, AutoModelForSequenceClassification
-            import torch
-            self.tokenizer = AutoTokenizer.from_pretrained(config.MODEL_NAME)
-            self.model = AutoModelForSequenceClassification.from_pretrained(config.MODEL_NAME)
-            self.model.to(config.DEVICE)
+            self.tokenizer, self.model = self.load_model_and_tokenizer(config.MODEL_NAME, config.DEVICE)
         except Exception as e:
             logger.error(f'Failed to load reranker model: {e}')
             raise

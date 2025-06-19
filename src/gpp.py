@@ -19,7 +19,8 @@ from typing import List, Dict, Any, Optional
 import re
 
 from src import EmbeddingConfig, GPPConfig
-from src.utils import OpenAIEmbedder, LLMClient, logger
+from src.utils import OpenAIEmbedder, LLMClient
+from src import logger
 
 def parse_markdown_table(md: str) -> Optional[Dict[str, Any]]:
     """
