@@ -1,10 +1,9 @@
 import json
 import os
 
+from loguru import logger
 import requests
 from huggingface_hub import snapshot_download
-from utils import logger
-
 
 def download_json(url):
     response = requests.get(url)
@@ -28,13 +27,16 @@ def download_and_modify_json(url, local_filename, modifications):
         json.dump(data, f, ensure_ascii=False, indent=4)
 
 
-if __name__ == '__main__':
-
+def initialize_models():
+    """
+    Downloads and configures all necessary models and settings.
+    This function is designed to be called once at application startup.
+    """
     mineru_patterns = [
         # "models/Layout/LayoutLMv3/*",
         "models/Layout/YOLO/*",
-        # "models/MFD/YOLO/*",
-        # "models/MFR/unimernet_hf_small_2503/*",
+        "models/MFD/YOLO/*",
+        "models/MFR/unimernet_hf_small_2503/*",
         "models/OCR/paddleocr_torch/*",
         # "models/TabRec/TableMaster/*",
         # "models/TabRec/StructEqTable/*",
@@ -69,3 +71,7 @@ if __name__ == '__main__':
 
     download_and_modify_json(json_url, config_file, json_mods)
     logger.info(f'The configuration file has been configured successfully, the path is: {config_file}')
+
+
+if __name__ == '__main__':
+    initialize_models()

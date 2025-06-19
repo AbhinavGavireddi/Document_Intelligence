@@ -7,8 +7,12 @@ from sentence_transformers import SentenceTransformer
 import torch
 import chromadb
 from src.utils import OpenAIEmbedder, LocalEmbedder
+from src.ghm import initialize_models
 
 load_dotenv()
+
+# Initialize models and configurations at startup
+initialize_models()
 
 def sanitize_html(raw):
     # allow only text and basic tags
@@ -68,5 +72,3 @@ def get_embedder():
     else:
         logger.info(f"Using local embedder with model: {EmbeddingConfig.TEXT_MODEL}")
         return LocalEmbedder(model_name=EmbeddingConfig.TEXT_MODEL)
-
-    
