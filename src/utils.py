@@ -6,6 +6,7 @@ import openai
 from typing import List
 from openai import AzureOpenAI
 from langchain_openai import AzureOpenAIEmbeddings
+from src import logger  # Import logger from src/__init__.py
 
 
 class LLMClient:
@@ -21,7 +22,7 @@ class LLMClient:
         openai_model_name = model or os.getenv('OPENAI_MODEL', 'gpt-4o')
 
         if not (azure_api_key or azure_endpoint or azure_api_version or openai_model_name):
-            print('OPENAI_API_KEY is not set')
+            logger.error('OPENAI_API_KEY is not set')
             raise EnvironmentError('Missing OPENAI_API_KEY')
         client = AzureOpenAI(
                 api_key=azure_api_key,
@@ -40,7 +41,7 @@ class LLMClient:
             text = resp.choices[0].message.content.strip()
             return text
         except Exception as e:
-            print('LLM generation failed')
+            logger.error(f'LLM generation failed: {e}')
             raise
 
 

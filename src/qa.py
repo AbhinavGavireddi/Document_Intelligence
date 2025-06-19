@@ -11,8 +11,8 @@ Each component is modular and can be swapped or extended (e.g., add HyDE retriev
 import os
 from typing import List, Dict, Any, Tuple
 
-from src import RerankerConfig
-from src.utils import LLMClient, logger
+from src import RerankerConfig, logger
+from src.utils import LLMClient
 from src.retriever import Retriever, RetrieverConfig
 
 class Reranker:

@@ -2,7 +2,7 @@ import os
 from typing import List, Dict, Any
 
 from src.config import RetrieverConfig
-from src.utils import logger
+from src import logger  # Use logger from src/__init__.py
 
 class Retriever:
     """

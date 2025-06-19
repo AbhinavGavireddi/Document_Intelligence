@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 import bleach
+from loguru import logger
 
 load_dotenv()
 
@@ -40,16 +41,8 @@ class GPPConfig:
     DEDUP_SIM_THRESHOLD = float(os.getenv('DEDUP_SIM_THRESHOLD', 0.9))
     EXPANSION_SIM_THRESHOLD = float(os.getenv('EXPANSION_SIM_THRESHOLD', 0.85))
     COREF_CONTEXT_SIZE = int(os.getenv('COREF_CONTEXT_SIZE', 3))
-
-class GPPConfig:
-    """
-    Configuration for GPP pipeline.
-    """
-
-    CHUNK_TOKEN_SIZE = 256
-    DEDUP_SIM_THRESHOLD = 0.9
-    EXPANSION_SIM_THRESHOLD = 0.85
-    COREF_CONTEXT_SIZE = 3
     HNSW_EF_CONSTRUCTION = int(os.getenv("HNSW_EF_CONSTRUCTION", "200"))
     HNSW_M = int(os.getenv("HNSW_M", "16"))
     HNSW_EF_SEARCH = int(os.getenv("HNSW_EF_SEARCH", "50"))
+
+    
