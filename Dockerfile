@@ -21,6 +21,7 @@ RUN apt-get update && \
 # Copy and install Python dependencies
 COPY requirements.txt ./
 RUN pip install uv && \
+    pip install detectron2 -f https://dl.fbaipublicfiles.com/detectron2/wheels/cpu/torch2.1/index.html && \
     uv pip install --no-cache-dir -r requirements.txt
 
 # Download models (if needed at build time)
