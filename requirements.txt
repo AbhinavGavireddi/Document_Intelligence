@@ -151,7 +151,7 @@ gitpython==3.1.44
     # via streamlit
 google-auth==1.6.3
     # via kubernetes
-googleapis-common-protos==1.70.0
+googleapis-common-protos==1.56.4
     # via opentelemetry-exporter-otlp-proto-grpc
 gradio==5.34.2
     # via gradio-pdf
@@ -415,8 +415,9 @@ pillow==11.2.1
     #   ultralytics
 posthog==5.3.0
     # via chromadb
-protobuf==6.31.1
+protobuf==3.20.0
     # via
+    #   -r requirements.in
     #   googleapis-common-protos
     #   onnxruntime
     #   opentelemetry-proto
