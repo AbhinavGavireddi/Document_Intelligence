@@ -1,0 +1,48 @@
+# Core
+streamlit>=1.25.0
+sentence-transformers>=2.2.2 # Re-enabled for local embeddings
+# rank-bm25>=0.2.2 - Replaced by ChromaDB
+# hnswlib>=0.7.0 - Replaced by ChromaDB
+chromadb>=0.4.18
+huggingface-hub>=0.16.4
+langchain>=0.1.9
+langchain-openai>=0.1.9
+python-dotenv>=1.0.0
+structlog>=23.1.0
+bleach>=6.0.0
+werkzeug>=2.0.0
+boto3>=1.28.43
+Brotli>=1.1.0
+click>=8.1.7
+PyMuPDF>=1.24.9,<1.25.0
+loguru>=0.6.0
+numpy>=1.21.6,<2.0.0
+fast-langdetect>=0.2.3,<0.3.0
+scikit-learn>=1.0.2
+pdfminer.six>=20231228
+torch>=2.6.0
+torchvision
+# matplotlib>=3.10 - Removed, not used in the app
+ultralytics>=8.3.48
+rapid-table>=1.0.3,<2.0.0
+doclayout-yolo==0.0.2b1
+dill>=0.3.9,<1
+PyYAML>=6.0.2,<7
+ftfy>=6.3.1,<7
+openai>=1.70.0,<2
+pydantic>=2.7.2,<2.11
+# transformers>=4.49.0,<5.0.0 - Removed as reranker is disabled
+gradio-pdf>=0.0.21
+shapely>=2.0.7,<3
+pyclipper>=1.3.0,<2
+omegaconf>=2.3.0,<3
+tqdm>=4.67.1
+# MinerU
+git+https://github.com/opendatalab/MinerU.git@dev
+chroma-hnswlib>=0.7.3
+chromadb>=0.4.24
+PyMuPDF>=1.23.26
+tiktoken>=0.6.0
+loguru>=0.7.2
+unstructured>=0.12.6
+magic_pdf>=0.9.12
